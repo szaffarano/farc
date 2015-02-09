@@ -16,6 +16,7 @@ void systick(void);
 
 int main(void) {
 	uint8_t address[5] = { 0x22, 0x33, 0x44, 0x55, 0x01 };
+	uint8_t data;
 
 	farc_gpio_init();
 
@@ -28,8 +29,15 @@ int main(void) {
 	sei();
 	while (1) {
 		if (nrf_available() > 0) {
-			if ((nrf_receive() & 0xFF) == 'a') {
+			data = nrf_receive() & 0xFF;
+			switch (data) {
+			case 'a':
 				tgl_bit(LEDRX_PORT, LEDRX);
+				nrf_send('b');
+				break;
+			case 'b':
+				tgl_bit(LEDRX_PORT, LEDRX);
+				break;
 			}
 		}
 
