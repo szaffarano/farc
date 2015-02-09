@@ -12,36 +12,33 @@
 #include <nrf_ports.h>
 #include <farc.h>
 #include <avr/interrupt.h>
-
 #include <util/delay.h>
 
+/*================== [macros] =================================*/
 #define	ce_low()			clear_bit(NRF_CE_PORT, NRF_CE)
 #define	ce_high()			set_bit(NRF_CE_PORT, NRF_CE)
+#define NRF_BUFFER_SIZE		8
+#define NRF_BUFFER_MASK		(NRF_BUFFER_SIZE - 1)
+#define	nrf_next_id(idx)	((idx+1) & NRF_BUFFER_MASK)
 
-/* #### manejo de cola circular para los datos recibidos #### */
-#define NRF_BUFFER_SIZE			8
-#define NRF_BUFFER_MASK			(NRF_BUFFER_SIZE - 1)
-#define	nrf_next_id(idx)		((idx+1) & NRF_BUFFER_MASK)
 typedef struct _buffer_t {
-	volatile unsigned char buffer[NRF_BUFFER_SIZE];
-	volatile unsigned char push_idx;
-	volatile unsigned char pop_idx;
+	volatile uint8_t buffer[NRF_BUFFER_SIZE];
+	volatile uint8_t push_idx;
+	volatile uint8_t pop_idx;
 } buffer_t;
-static buffer_t rx = { .push_idx = 0, .pop_idx = 0 };
-static void nrf_push(uint8_t data);
-/* ##### manejo de cola circular para los datos recibidos #### */
 
-/* encabezado de funciones helper */
-
+/*==================[funciones helper]=================================*/
 static uint8_t nrf_read_reg(uint8_t reg);
-//static void nrf_read_multibyte_reg(uint8_t reg, uint8_t* buffer);
 static uint8_t nrf_write_reg(uint8_t reg, uint8_t value);
-static uint8_t nrf_write_multibyte_reg(uint8_t reg, uint8_t *pbuf,
-		uint8_t length);
+static uint8_t nrf_write_multibyte_reg(uint8_t reg, uint8_t *pbuf, uint8_t l);
 static void nrf_set_mode(nrf_mode_t mode);
 static void nrf_ce_pulse(void);
 static uint8_t nrf_rx_fifo_empty(void);
-uint8_t nrf_execute(uint8_t cmd);
+static uint8_t nrf_execute(uint8_t cmd);
+static void nrf_push_data(uint8_t data);
+
+/*==================[variables internas]=================================*/
+static volatile buffer_t rx = { .push_idx = 0, .pop_idx = 0 };
 
 void nrf_init(nrf_mode_t mode, uint8_t address[5]) {
 	// dejo bajo CE para no generar actividad
@@ -122,15 +119,14 @@ uint8_t nrf_receive() {
 	next_idx = nrf_next_id(rx.pop_idx);
 	r = rx.buffer[next_idx];
 	rx.pop_idx = next_idx;
-
 	return r;
 }
 
 uint8_t nrf_available() {
-	return (rx.push_idx > rx.pop_idx) ? (rx.push_idx - rx.pop_idx) : 0;
+	return (rx.push_idx > rx.pop_idx) ? (rx.push_idx - rx.pop_idx) : (rx.pop_idx - rx.push_idx);
 }
 
-/* funciones helper */
+/*==================[funciones helper]=================================*/
 static uint8_t nrf_read_reg(uint8_t reg) {
 	uint8_t value;
 	spi_start_trade();
@@ -142,18 +138,6 @@ static uint8_t nrf_read_reg(uint8_t reg) {
 
 	return value;
 }
-
-//static void nrf_read_multibyte_reg(uint8_t reg, uint8_t* buffer) {
-//	uint8_t length = 10;
-//	spi_start_trade();
-//
-//	spi_trade_byte(R_REGISTER + reg);
-//	while (length--) {
-//		*buffer++ = spi_trade_byte(NOP);
-//	}
-//
-//	spi_stop_trade();
-//}
 
 static uint8_t nrf_write_reg(uint8_t reg, uint8_t value) {
 	uint8_t status;
@@ -180,7 +164,7 @@ static uint8_t nrf_write_multibyte_reg(uint8_t reg, uint8_t *pbuf,
 	return status;
 }
 
-void nrf_set_mode(nrf_mode_t mode) {
+static void nrf_set_mode(nrf_mode_t mode) {
 	uint8_t config = nrf_read_reg(CONFIG);
 
 	if (mode == NRF_RX) {
@@ -192,7 +176,7 @@ void nrf_set_mode(nrf_mode_t mode) {
 	}
 }
 
-void nrf_ce_pulse(void) {
+static void nrf_ce_pulse(void) {
 	ce_high();
 	_delay_ms(1);
 	ce_low();
@@ -202,7 +186,7 @@ static uint8_t nrf_rx_fifo_empty(void) {
 	return ((nrf_read_reg(STATUS) >> RX_P_NO) & MASK_RX_P_NO) == MASK_RX_P_NO;
 }
 
-uint8_t nrf_execute(uint8_t cmd) {
+static uint8_t nrf_execute(uint8_t cmd) {
 	uint8_t value;
 	spi_start_trade();
 	value = spi_trade_byte(cmd);
@@ -220,14 +204,14 @@ ISR(PCINT_vect) {
 			// leer el payload
 			while (!nrf_rx_fifo_empty()) {
 				//	nrf_read_multibyte_reg(R_RX_PAYLOAD, ack_payload);
-				nrf_push(nrf_read_reg(R_RX_PAYLOAD));
+				nrf_push_data(nrf_read_reg(R_RX_PAYLOAD));
 			}
 			break;
 		case (_BV(RX_DR)): /* se recibió un paquete */
 			// leer el payload
 			while (!nrf_rx_fifo_empty()) {
 				//	nrf_read_multibyte_reg(R_RX_PAYLOAD, rx_payload);
-				nrf_push(nrf_read_reg(R_RX_PAYLOAD));
+				nrf_push_data(nrf_read_reg(R_RX_PAYLOAD));
 			}
 			break;
 		case (_BV(MAX_RT)): /* máxima cantidad de reintentos */
@@ -238,8 +222,7 @@ ISR(PCINT_vect) {
 	}
 }
 
-/* implementacion funciones manejo de cola */
-static void nrf_push(uint8_t data) {
+static void nrf_push_data(uint8_t data) {
 	uint8_t next_idx = nrf_next_id(rx.push_idx);
 
 	if (next_idx == rx.pop_idx) {
