@@ -23,7 +23,8 @@
 static uint8_t nrf_read_reg(uint8_t reg);
 //static void nrf_read_multibyte_reg(uint8_t reg, uint8_t* buffer);
 static uint8_t nrf_write_reg(uint8_t reg, uint8_t value);
-static uint8_t nrf_write_multibyte_reg(uint8_t reg, uint8_t *pbuf, uint8_t length);
+static uint8_t nrf_write_multibyte_reg(uint8_t reg, uint8_t *pbuf,
+		uint8_t length);
 static void nrf_set_mode(nrf_mode_t mode);
 static void nrf_ce_pulse(void);
 static uint8_t nrf_rx_fifo_empty(void);
@@ -54,7 +55,8 @@ void nrf_init(nrf_mode_t mode, uint8_t address[5]) {
 	// habilito power up, crc de 2 bytes, habilitar las máscaras de interrupción y ...
 	if (mode == NRF_RX) {
 		// ... modo PRX y...
-		nrf_write_reg(CONFIG, _BV(PWR_UP) | _BV(EN_CRC) | _BV(CRCO) | _BV(PRIM_RX));
+		nrf_write_reg(CONFIG,
+		_BV(PWR_UP) | _BV(EN_CRC) | _BV(CRCO) | _BV(PRIM_RX));
 	} else {
 		// ... modo PTX
 		nrf_write_reg(CONFIG, (_BV(PWR_UP) | _BV(EN_CRC) | _BV(CRCO)));
@@ -96,6 +98,7 @@ void nrf_send(uint8_t c) {
 	nrf_set_mode(NRF_TX);
 	nrf_write_reg(W_TX_PAYLOAD, c);
 	nrf_ce_pulse();
+	nrf_set_mode(NRF_RX);
 }
 
 uint16_t nrf_receive() {
@@ -143,7 +146,8 @@ static uint8_t nrf_write_reg(uint8_t reg, uint8_t value) {
 	return status;
 }
 
-static uint8_t nrf_write_multibyte_reg(uint8_t reg, uint8_t *pbuf, uint8_t length) {
+static uint8_t nrf_write_multibyte_reg(uint8_t reg, uint8_t *pbuf,
+		uint8_t length) {
 	uint8_t status;
 
 	spi_start_trade();
@@ -192,12 +196,9 @@ ISR(PCINT_vect) {
 		uint8_t status = nrf_write_reg(STATUS, NRF_IRQS_MASK) & NRF_IRQS_MASK;
 		switch (status) {
 		case (_BV(TX_DS)): /* se envió un paquete */
-			// vuelvo a dejar en RX si el paquete fue enviado
-			nrf_set_mode(NRF_RX);
 			break;
 		case (_BV(TX_DS) | _BV(RX_DR)): /* se envió un paquete y se recibió ack con payload */
-			// leer el payload y dejar en RX
-			nrf_set_mode(NRF_RX);
+			// leer el payload
 			while (!nrf_rx_fifo_empty()) {
 				//	nrf_read_multibyte_reg(R_RX_PAYLOAD, ack_payload);
 				data = nrf_read_reg(R_RX_PAYLOAD);
@@ -211,8 +212,7 @@ ISR(PCINT_vect) {
 			}
 			break;
 		case (_BV(MAX_RT)): /* máxima cantidad de reintentos */
-			// flush de tx y vuelvo a dejar en rx
-			nrf_set_mode(NRF_RX);
+			// flush de tx
 			nrf_execute(FLUSH_TX);
 			break;
 		};
