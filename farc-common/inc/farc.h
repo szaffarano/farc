@@ -26,7 +26,7 @@
 #define	LEDRX_PORT			PORTD
 #define LEDRX_DDR			DDRD
 
-#define	DEBOUNCE_DELAY		30
+#define	DEBOUNCE_DELAY		20
 
 typedef void ((*systick_callback)(void));
 
