@@ -29,7 +29,7 @@ void nrf_send(uint8_t c);
  *      LSB: byte recibido por el dispositivo
  *      MSB: código de error en el MSB.
  */
-uint16_t nrf_receive();
+uint8_t nrf_receive();
 
 /**
  * Devuelve la cantidad de bytes disponibles para lectura.

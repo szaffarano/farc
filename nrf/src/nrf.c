@@ -13,10 +13,23 @@
 #include <farc.h>
 #include <avr/interrupt.h>
 
-#define			ce_low()		clear_bit(NRF_CE_PORT, NRF_CE)
-#define			ce_high()		set_bit(NRF_CE_PORT, NRF_CE)
-
 #include <util/delay.h>
+
+#define	ce_low()			clear_bit(NRF_CE_PORT, NRF_CE)
+#define	ce_high()			set_bit(NRF_CE_PORT, NRF_CE)
+
+/* #### manejo de cola circular para los datos recibidos #### */
+#define NRF_BUFFER_SIZE			8
+#define NRF_BUFFER_MASK			(NRF_BUFFER_SIZE - 1)
+#define	nrf_next_id(idx)		((idx+1) & NRF_BUFFER_MASK)
+typedef struct _buffer_t {
+	volatile unsigned char buffer[NRF_BUFFER_SIZE];
+	volatile unsigned char push_idx;
+	volatile unsigned char pop_idx;
+} buffer_t;
+static buffer_t rx = { .push_idx = 0, .pop_idx = 0 };
+static void nrf_push(uint8_t data);
+/* ##### manejo de cola circular para los datos recibidos #### */
 
 /* encabezado de funciones helper */
 
@@ -29,8 +42,6 @@ static void nrf_set_mode(nrf_mode_t mode);
 static void nrf_ce_pulse(void);
 static uint8_t nrf_rx_fifo_empty(void);
 uint8_t nrf_execute(uint8_t cmd);
-
-static char data = 0xFF;
 
 void nrf_init(nrf_mode_t mode, uint8_t address[5]) {
 	// dejo bajo CE para no generar actividad
@@ -101,14 +112,22 @@ void nrf_send(uint8_t c) {
 	nrf_set_mode(NRF_RX);
 }
 
-uint16_t nrf_receive() {
-	char tmp = data;
-	data = 0xFF;
-	return tmp;
+uint8_t nrf_receive() {
+	uint8_t next_idx;
+	uint8_t r;
+
+	if (rx.pop_idx == rx.push_idx) {
+		return 0;
+	}
+	next_idx = nrf_next_id(rx.pop_idx);
+	r = rx.buffer[next_idx];
+	rx.pop_idx = next_idx;
+
+	return r;
 }
 
 uint8_t nrf_available() {
-	return (data != 0xFF) ? 1 : 0;
+	return (rx.push_idx > rx.pop_idx) ? (rx.push_idx - rx.pop_idx) : 0;
 }
 
 /* funciones helper */
@@ -201,14 +220,14 @@ ISR(PCINT_vect) {
 			// leer el payload
 			while (!nrf_rx_fifo_empty()) {
 				//	nrf_read_multibyte_reg(R_RX_PAYLOAD, ack_payload);
-				data = nrf_read_reg(R_RX_PAYLOAD);
+				nrf_push(nrf_read_reg(R_RX_PAYLOAD));
 			}
 			break;
 		case (_BV(RX_DR)): /* se recibió un paquete */
 			// leer el payload
 			while (!nrf_rx_fifo_empty()) {
 				//	nrf_read_multibyte_reg(R_RX_PAYLOAD, rx_payload);
-				data = nrf_read_reg(R_RX_PAYLOAD);
+				nrf_push(nrf_read_reg(R_RX_PAYLOAD));
 			}
 			break;
 		case (_BV(MAX_RT)): /* máxima cantidad de reintentos */
@@ -216,5 +235,17 @@ ISR(PCINT_vect) {
 			nrf_execute(FLUSH_TX);
 			break;
 		};
+	}
+}
+
+/* implementacion funciones manejo de cola */
+static void nrf_push(uint8_t data) {
+	uint8_t next_idx = nrf_next_id(rx.push_idx);
+
+	if (next_idx == rx.pop_idx) {
+		// overflow
+	} else {
+		rx.push_idx = next_idx;
+		rx.buffer[next_idx] = data;
 	}
 }
