@@ -19,16 +19,13 @@
 #define	ON		0x01
 #define	OFF		0x02
 
-#define TIMEOUT	2000
+#define TIMEOUT	(1000 * 30)
 
 void systick(void);
 
 static uint8_t address[5] = { 0x22, 0x33, 0x44, 0x55, 0x01 };
-static uint8_t running;
-static int16_t start_ms = 0;
-
+uint8_t running = 0;
 int main(void) {
-
 	farc_gpio_init();
 
 	farc_systick_init(systick);
@@ -39,38 +36,29 @@ int main(void) {
 
 	sei();
 	while (1) {
+		_delay_ms(50);
 		if (nrf_available() > 0) {
 			switch (nrf_receive()) {
-			case STOP:
-				running = 0;
-				break;
-			case START:
-				if (!running) {
-					start_ms = 0;
-					set_bit(LEDTX_PORT, LEDRX);
-				}
+			case ON:
 				running = 1;
 				break;
-			case STATUS:
-				nrf_send(running ? ON : OFF);
+			case OFF:
+				running = 0;
 				break;
 			}
 		}
-
 		if (running) {
-			if (start_ms >= TIMEOUT) {
-				running = 0;
-			}
+			set_bit(LEDTX_PORT, LEDTX);
 		} else {
-			clear_bit(LEDRX_PORT, LEDRX);
+			clear_bit(LEDTX_PORT, LEDTX);
 		}
-		nrf_send(running ? ON : OFF);
-		_delay_ms(50);
 	}
 
 	return 0;
 }
 
 void systick(void) {
-	start_ms++;
+	if (farc_debounce() == ROSE) {
+		nrf_send(running ? STOP : START);
+	}
 }
