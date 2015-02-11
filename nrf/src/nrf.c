@@ -81,7 +81,7 @@ void nrf_init(nrf_mode_t mode, uint8_t address[5]) {
 	// 0011: espera 1000 uSec para retransmitir
 	// 1111: retransmite hasta 15 veces antes de dar error
 	// @TODO va hardcoded, analizar recibirlo como parámetro.
-	nrf_write_reg(SETUP_RETR, (0b0010 << 4) | (0b1111));
+	nrf_write_reg(SETUP_RETR, (0b0000 << 4) | (0b0111));
 
 	// 11: address de 5 bytes (recibo 5 bytes configurando address -> hardcoded)
 	nrf_write_reg(SETUP_AW, 0b11);
@@ -103,10 +103,10 @@ void nrf_init(nrf_mode_t mode, uint8_t address[5]) {
 }
 
 void nrf_send(uint8_t c) {
+	nrf_execute(FLUSH_TX);
 	nrf_set_mode(NRF_TX);
 	nrf_write_reg(W_TX_PAYLOAD, c);
 	nrf_ce_pulse();
-	nrf_set_mode(NRF_RX);
 }
 
 uint8_t nrf_receive() {
@@ -123,7 +123,8 @@ uint8_t nrf_receive() {
 }
 
 uint8_t nrf_available() {
-	return (rx.push_idx > rx.pop_idx) ? (rx.push_idx - rx.pop_idx) : (rx.pop_idx - rx.push_idx);
+	return (rx.push_idx > rx.pop_idx) ?
+			(rx.push_idx - rx.pop_idx) : (rx.pop_idx - rx.push_idx);
 }
 
 /*==================[funciones helper]=================================*/
@@ -165,20 +166,21 @@ static uint8_t nrf_write_multibyte_reg(uint8_t reg, uint8_t *pbuf,
 }
 
 static void nrf_set_mode(nrf_mode_t mode) {
-	uint8_t config = nrf_read_reg(CONFIG);
+	uint8_t config = nrf_execute(NOP);
 
 	if (mode == NRF_RX) {
-		nrf_write_reg(CONFIG, (config | _BV(PRIM_RX)));
+		set_bit(config, PRIM_RX);
 		ce_high();
 	} else {
+		clear_bit(config, PRIM_RX);
 		ce_low();
-		nrf_write_reg(CONFIG, (config & ~_BV(PRIM_RX)));
 	}
+	nrf_write_reg(CONFIG, config);
 }
 
 static void nrf_ce_pulse(void) {
 	ce_high();
-	_delay_ms(1);
+	_delay_us(20);
 	ce_low();
 }
 
@@ -199,8 +201,10 @@ ISR(PCINT_vect) {
 		uint8_t status = nrf_write_reg(STATUS, NRF_IRQS_MASK) & NRF_IRQS_MASK;
 		switch (status) {
 		case (_BV(TX_DS)): /* se envió un paquete */
+			nrf_set_mode(NRF_RX);
 			break;
 		case (_BV(TX_DS) | _BV(RX_DR)): /* se envió un paquete y se recibió ack con payload */
+			nrf_set_mode(NRF_RX);
 			// leer el payload
 			while (!nrf_rx_fifo_empty()) {
 				//	nrf_read_multibyte_reg(R_RX_PAYLOAD, ack_payload);
@@ -217,6 +221,7 @@ ISR(PCINT_vect) {
 		case (_BV(MAX_RT)): /* máxima cantidad de reintentos */
 			// flush de tx
 			nrf_execute(FLUSH_TX);
+			nrf_set_mode(NRF_RX);
 			break;
 		};
 	}
