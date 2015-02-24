@@ -14,6 +14,8 @@
 #define set_bit(port, pin)	port |= _BV(pin)
 #define clear_bit(port, pin)	port &= ~_BV(pin)
 
+#define RADIO_ADDRESS		{ 0x22, 0x33, 0x44, 0x55, 0x01 }
+
 #define	SW1					PD3
 #define	SW1_PORT			PORTD
 #define SW1_PIN				PIND
@@ -27,6 +29,18 @@
 #define LEDRX_DDR			DDRD
 
 #define	DEBOUNCE_DELAY		20
+
+/* relay commands */
+#define	CMD_START			0x10
+#define	CMD_STOP			0x20
+#define CMD_STATUS			0x30
+
+/* relay status */
+#define	RELAY_RUNNING		0x01
+#define	RELAY_IDDLE			0x02
+
+/* relay timeout */
+#define TIMEOUT				(1000 * 5)
 
 typedef void ((*systick_callback)(void));
 

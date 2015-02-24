@@ -8,25 +8,19 @@
 #include <spi.h>
 #include <nrf.h>
 #include <farc.h>
+#include <fsm.h>
 
 #include <util/delay.h>
 #include <avr/interrupt.h>
 
-#define	START	0x10
-#define	STOP	0x20
-#define STATUS	0x30
-
-#define	ON		0x01
-#define	OFF		0x02
-
-#define TIMEOUT	2000
-
 void systick(void);
 
-static uint8_t address[5] = { 0x22, 0x33, 0x44, 0x55, 0x01 };
-static uint8_t running;
-static int16_t start_ms = 0;
+static uint8_t relay_status(void);
+static void on(void);
+static void off(void);
 
+static uint8_t address[5] = RADIO_ADDRESS;
+static fsm_relay_t fsm;
 int main(void) {
 
 	farc_gpio_init();
@@ -37,34 +31,26 @@ int main(void) {
 
 	nrf_init(NRF_RX, address);
 
+	fsm.off = off;
+	fsm.on = on;
+	fsm.status_cb = relay_status;
+	fsm.timeout = TIMEOUT;
+
 	sei();
 	while (1) {
 		if (nrf_available() > 0) {
 			switch (nrf_receive()) {
-			case STOP:
-				running = 0;
+			case CMD_STOP:
+				off();
 				break;
-			case START:
-				if (!running) {
-					start_ms = 0;
-					set_bit(LEDTX_PORT, LEDRX);
-				}
-				running = 1;
+			case CMD_START:
+				on();
 				break;
-			case STATUS:
-				nrf_send(running ? ON : OFF);
+			case CMD_STATUS:
+				nrf_send(relay_status() ? RELAY_RUNNING : RELAY_IDDLE);
 				break;
 			}
 		}
-
-		if (running) {
-			if (start_ms >= TIMEOUT) {
-				running = 0;
-			}
-		} else {
-			clear_bit(LEDRX_PORT, LEDRX);
-		}
-		nrf_send(running ? ON : OFF);
 		_delay_ms(50);
 	}
 
@@ -72,5 +58,17 @@ int main(void) {
 }
 
 void systick(void) {
-	start_ms++;
+	fsm_status(&fsm);
+}
+
+static uint8_t relay_status(void) {
+	return bit_is_set(LEDTX_PORT, LEDTX);
+}
+
+static void on(void) {
+	set_bit(LEDTX_PORT, LEDTX);
+}
+
+static void off(void) {
+	clear_bit(LEDTX_PORT, LEDTX);
 }
