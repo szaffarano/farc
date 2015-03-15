@@ -36,6 +36,7 @@
 								<option id="de.innot.avreclipse.compiler.option.optimize.1910918034" name="Optimization Level" superClass="de.innot.avreclipse.compiler.option.optimize" value="de.innot.avreclipse.compiler.optimize.size" valueType="enumerated"/>
 								<option id="de.innot.avreclipse.compiler.option.incpath.1349963043" name="Include Paths (-I)" superClass="de.innot.avreclipse.compiler.option.incpath" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/spi/inc}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/inc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/nrf/inc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/farc-common/inc}&quot;"/>
 								</option>
