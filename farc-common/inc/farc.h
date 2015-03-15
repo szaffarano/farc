@@ -38,9 +38,10 @@
 /* relay status */
 #define	RELAY_RUNNING		0x01
 #define	RELAY_IDDLE			0x02
+#define UNDEFINED			0xFF
 
 /* relay timeout */
-#define TIMEOUT				(1000 * 5)
+#define TIMEOUT				(1000 * 30)
 
 typedef void ((*systick_callback)(void));
 
