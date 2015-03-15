@@ -35,10 +35,14 @@ static void nrf_set_mode(nrf_mode_t mode);
 static void nrf_ce_pulse(void);
 static uint8_t nrf_rx_fifo_empty(void);
 static uint8_t nrf_execute(uint8_t cmd);
-static void nrf_push_data(uint8_t data);
+static void queue_push_data(buffer_t* queue, uint8_t data);
+static uint8_t queue_pop_data(buffer_t* queue);
+static uint8_t queue_available(buffer_t* queue);
 
 /*==================[variables internas]=================================*/
-static volatile buffer_t rx = { .push_idx = 0, .pop_idx = 0 };
+static buffer_t rx = { .push_idx = 0, .pop_idx = 0 };
+static buffer_t tx = { .push_idx = 0, .pop_idx = 0 };
+static volatile uint8_t sending = 0;
 
 void nrf_init(nrf_mode_t mode, uint8_t address[5]) {
 	// dejo bajo CE para no generar actividad
@@ -103,28 +107,23 @@ void nrf_init(nrf_mode_t mode, uint8_t address[5]) {
 }
 
 void nrf_send(uint8_t c) {
-	nrf_execute(FLUSH_TX);
-	nrf_set_mode(NRF_TX);
-	nrf_write_reg(W_TX_PAYLOAD, c);
-	nrf_ce_pulse();
+	if (!sending) {
+		nrf_execute(FLUSH_TX);
+		nrf_set_mode(NRF_TX);
+		nrf_write_reg(W_TX_PAYLOAD, c);
+		nrf_ce_pulse();
+		sending = 1;
+	} else {
+		queue_push_data(&tx, c);
+	}
 }
 
 uint8_t nrf_receive() {
-	uint8_t next_idx;
-	uint8_t r;
-
-	if (rx.pop_idx == rx.push_idx) {
-		return 0;
-	}
-	next_idx = nrf_next_id(rx.pop_idx);
-	r = rx.buffer[next_idx];
-	rx.pop_idx = next_idx;
-	return r;
+	return queue_pop_data(&rx);
 }
 
 uint8_t nrf_available() {
-	return (rx.push_idx > rx.pop_idx) ?
-			(rx.push_idx - rx.pop_idx) : (rx.pop_idx - rx.push_idx);
+	return queue_available(&rx);
 }
 
 /*==================[funciones helper]=================================*/
@@ -202,38 +201,63 @@ ISR(PCINT_vect) {
 		switch (status) {
 		case (_BV(TX_DS)): /* se envió un paquete */
 			nrf_set_mode(NRF_RX);
+			sending = 0;
 			break;
 		case (_BV(TX_DS) | _BV(RX_DR)): /* se envió un paquete y se recibió ack con payload */
-			nrf_set_mode(NRF_RX);
 			// leer el payload
 			while (!nrf_rx_fifo_empty()) {
 				//	nrf_read_multibyte_reg(R_RX_PAYLOAD, ack_payload);
-				nrf_push_data(nrf_read_reg(R_RX_PAYLOAD));
+				queue_push_data(&rx, nrf_read_reg(R_RX_PAYLOAD));
 			}
+			nrf_set_mode(NRF_RX);
+			sending = 0;
 			break;
 		case (_BV(RX_DR)): /* se recibió un paquete */
 			// leer el payload
 			while (!nrf_rx_fifo_empty()) {
 				//	nrf_read_multibyte_reg(R_RX_PAYLOAD, rx_payload);
-				nrf_push_data(nrf_read_reg(R_RX_PAYLOAD));
+				queue_push_data(&rx, nrf_read_reg(R_RX_PAYLOAD));
 			}
 			break;
 		case (_BV(MAX_RT)): /* máxima cantidad de reintentos */
 			// flush de tx
 			nrf_execute(FLUSH_TX);
 			nrf_set_mode(NRF_RX);
+			sending = 0;
 			break;
 		};
+		if (queue_available(&tx)) {
+			nrf_send(queue_pop_data(&tx));
+		}
 	}
 }
 
-static void nrf_push_data(uint8_t data) {
-	uint8_t next_idx = nrf_next_id(rx.push_idx);
+static void queue_push_data(buffer_t* queue, uint8_t data) {
+	uint8_t next_idx = nrf_next_id(queue->push_idx);
 
-	if (next_idx == rx.pop_idx) {
+	if (next_idx == queue->pop_idx) {
 		// overflow
 	} else {
-		rx.push_idx = next_idx;
-		rx.buffer[next_idx] = data;
+		queue->push_idx = next_idx;
+		queue->buffer[next_idx] = data;
 	}
+}
+
+static uint8_t queue_pop_data(buffer_t* queue) {
+	uint8_t next_idx;
+	uint8_t r;
+
+	if (queue->pop_idx == queue->push_idx) {
+		return 0;
+	}
+	next_idx = nrf_next_id(queue->pop_idx);
+	r = queue->buffer[next_idx];
+	queue->pop_idx = next_idx;
+	return r;
+}
+
+static uint8_t queue_available(buffer_t* queue) {
+	return (queue->push_idx > queue->pop_idx) ?
+			(queue->push_idx - queue->pop_idx) :
+			(queue->pop_idx - queue->push_idx);
 }
