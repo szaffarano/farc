@@ -8,7 +8,7 @@
 #include <spi.h>
 #include <nrf.h>
 #include <farc.h>
-#include <fsm.h>
+#include <fsm-slave.h>
 
 #include <util/delay.h>
 #include <avr/interrupt.h>
@@ -36,6 +36,14 @@ int main(void) {
 	fsm.status_cb = relay_status;
 	fsm.timeout = TIMEOUT;
 
+	for (int i = 0; i < 5; i++) {
+		set_bit(LEDTX_PORT, LEDTX);
+		_delay_ms(70);
+		clear_bit(LEDTX_PORT, LEDTX);
+		_delay_ms(100);
+	}
+	clear_bit(LEDTX_PORT, LEDTX);
+
 	sei();
 	while (1) {
 		if (nrf_available() > 0) {
@@ -62,13 +70,14 @@ void systick(void) {
 }
 
 static uint8_t relay_status(void) {
-	return bit_is_set(LEDTX_PORT, LEDTX);
+	return bit_is_set(LEDRX_PORT, LEDRX);
 }
 
 static void on(void) {
-	set_bit(LEDTX_PORT, LEDTX);
+	fsm.start = 0;
+	set_bit(LEDRX_PORT, LEDRX);
 }
 
 static void off(void) {
-	clear_bit(LEDTX_PORT, LEDTX);
+	clear_bit(LEDRX_PORT, LEDRX);
 }
