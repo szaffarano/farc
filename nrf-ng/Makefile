@@ -15,7 +15,7 @@ MAIN = src/main.c
 ## If you've split your program into multiple files, 
 ## include the additional .c source (in same directory) here 
 ## (and include the .h files in your foo.c)
-LOCAL_SOURCE = src/hal/*.c src/radio/*.c src/spi/*.c src/port/*.c src/nrf-ng.c
+LOCAL_SOURCE = src/hal/*.c src/radio/*.c src/spi/*.c src/debounce/*.c src/port/*.c src/nrf-ng.c
 
 ## Here you can link to one more directory (and multiple .c files)
 # EXTRA_SOURCE_DIR = ../AVR-Programming-Library/
@@ -31,7 +31,7 @@ EXTRA_SOURCE_FILES =
 
 PROGRAMMER_TYPE = atmelice_isp
 # extra arguments to avrdude: baud rate, chip type, -F flag, etc.
-PROGRAMMER_ARGS = 	
+PROGRAMMER_ARGS =
 
 ##########------------------------------------------------------##########
 ##########                   Makefile Magic!                    ##########
