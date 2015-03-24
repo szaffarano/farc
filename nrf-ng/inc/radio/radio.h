@@ -14,12 +14,7 @@
 #define RF_CHANNEL 			40
 #define RF_POWER_UP_DELAY 	2
 #define RF_PAYLOAD_LENGTH 	10
-#define RF_RETRANSMITS 		15
-#if (RF_PAYLOAD_LENGTH <= 18)
-#define RF_RETRANS_DELAY 	250
-#else
-#define RF_RETRANS_DELAY 	500
-#endif
+#define RF_ADDRESS	{ 0x22, 0x33, 0x44, 0x55, 0x01 }
 
 typedef enum {
 	RF_IDLE, RF_MAX_RT, RF_TX_DS, RF_RX_DR, RF_TX_AP, RF_BUSY
@@ -29,8 +24,7 @@ typedef enum {
 	HAL_NRF_MAX_RT = 4, HAL_NRF_TX_DS, HAL_NRF_RX_DR
 } hal_nrf_irq_source_t;
 
-void radio_init(const uint8_t *address,
-		hal_nrf_operation_mode_t operational_mode);
+void radio_init(hal_nrf_operation_mode_t operational_mode);
 
 radio_status_t radio_get_status(void);
 

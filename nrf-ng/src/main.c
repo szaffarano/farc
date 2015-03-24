@@ -69,6 +69,6 @@ int main(void) {
 			radio_send_packet(pload_esb, RF_PAYLOAD_LENGTH);
 		}
 
-		_delay_ms(1);
+		delay_ms(1);
 	}
 }

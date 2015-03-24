@@ -64,13 +64,13 @@ void hal_nrf_write_ack_pload(uint8_t pipe, uint8_t *tx_pload, uint8_t length) {
 }
 
 uint8_t hal_nrf_get_clear_irq_flags(void) {
-	return hal_nrf_write_reg(STATUS, (BIT_6 | BIT_5 | BIT_4))
-			& (BIT_6 | BIT_5 | BIT_4);
+	return hal_nrf_write_reg(STATUS, (mask(6) | mask(5) | mask(4)))
+			& (mask(6) | mask(5) | mask(4));
 }
 
 void hal_nrf_set_crc_mode(hal_nrf_crc_mode_t crc_mode) {
 	hal_nrf_write_reg(CONFIG,
-			(hal_nrf_read_reg(CONFIG) & ~(BIT_3 | BIT_2))
+			(hal_nrf_read_reg(CONFIG) & ~(mask(3) | mask(2)))
 					| ((uint8_t) (crc_mode) << 2));
 }
 
@@ -94,10 +94,10 @@ void hal_nrf_open_pipe(hal_nrf_address_t pipe_num, bool auto_ack) {
 
 	case HAL_NRF_ALL:
 		// sebas: casteo
-		hal_nrf_write_reg(EN_RXADDR, (uint8_t) ~(BIT_7 | BIT_6));
+		hal_nrf_write_reg(EN_RXADDR, (uint8_t) ~(mask(7) | mask(6)));
 
 		if (auto_ack)
-			hal_nrf_write_reg(EN_AA, (uint8_t) ~(BIT_7 | BIT_6));
+			hal_nrf_write_reg(EN_AA, (uint8_t) ~(mask(7) | mask(6)));
 		else
 			hal_nrf_write_reg(EN_AA, 0);
 		break;
@@ -170,10 +170,10 @@ uint8_t hal_nrf_get_address_width(void) {
 
 void hal_nrf_set_operation_mode(hal_nrf_operation_mode_t op_mode) {
 	if (op_mode == HAL_NRF_PRX) {
-		hal_nrf_write_reg(CONFIG, (hal_nrf_read_reg(CONFIG) | (1 << PRIM_RX)));
+		hal_nrf_write_reg(CONFIG, (hal_nrf_read_reg(CONFIG) | mask(PRIM_RX)));
 		ce_high();
 	} else {
-		hal_nrf_write_reg(CONFIG, (hal_nrf_read_reg(CONFIG) & ~(1 << PRIM_RX)));
+		hal_nrf_write_reg(CONFIG, (hal_nrf_read_reg(CONFIG) & ~mask(PRIM_RX)));
 		ce_low();
 	}
 }
@@ -184,9 +184,9 @@ hal_nrf_operation_mode_t hal_nrf_get_operation_mode(void) {
 
 void hal_nrf_set_power_mode(hal_nrf_pwr_mode_t pwr_mode) {
 	if (pwr_mode == HAL_NRF_PWR_UP) {
-		hal_nrf_write_reg(CONFIG, (hal_nrf_read_reg(CONFIG) | (1 << PWR_UP)));
+		hal_nrf_write_reg(CONFIG, (hal_nrf_read_reg(CONFIG) | mask(PWR_UP)));
 	} else {
-		hal_nrf_write_reg(CONFIG, (hal_nrf_read_reg(CONFIG) & ~(1 << PWR_UP)));
+		hal_nrf_write_reg(CONFIG, (hal_nrf_read_reg(CONFIG) & ~mask(PWR_UP)));
 	}
 }
 
@@ -203,7 +203,7 @@ bool hal_nrf_rx_fifo_empty(void) {
 }
 
 uint8_t hal_nrf_get_rx_data_source(void) {
-	return ((hal_nrf_nop() & (BIT_3 | BIT_2 | BIT_1)) >> 1);
+	return ((hal_nrf_nop() & (mask(3) | mask(2) | mask(1))) >> 1);
 }
 
 uint16_t hal_nrf_read_rx_pload(uint8_t *rx_pload) {
