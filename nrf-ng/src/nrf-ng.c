@@ -6,13 +6,15 @@
  */
 
 #include <spi/spi.h>
-#include <hw/nrf24l01.h>
+#include <port/avr.h>
 #include <nrf-ng.h>
 #include <hal/nrf_reg.h>
 #include <radio/radio.h>
+#include <util/delay.h>
+#include <avr/interrupt.h>
 
 /* private stuff */
-static void nrf_ng_gpio_init(void);
+static void nrf_ng_uc_init(void);
 static const uint8_t address[HAL_NRF_AW_5BYTES] =
 		{ 0x22, 0x33, 0x44, 0x55, 0x01 };
 typedef enum {
@@ -22,7 +24,7 @@ typedef enum {
 /* end private stuff */
 
 void nrf_ng_init(void) {
-	nrf_ng_gpio_init();
+	nrf_ng_uc_init();
 	spi_init();
 	radio_init(address, HAL_NRF_PRX);
 }
@@ -35,6 +37,10 @@ void nrf_ng_boot_msg(void) {
 		LEDA_OFF();
 		_delay_ms(70);
 	}
+}
+
+ISR(PCINT_vect) {
+	radio_irq();
 }
 
 debounce_event farc_debounce(void) {
@@ -83,7 +89,7 @@ debounce_event farc_debounce(void) {
 	return event;
 }
 
-static void nrf_ng_gpio_init(void) {
+static void nrf_ng_uc_init(void) {
 	/* pulsador como input y con pullup */
 	set_bit(SW1_PORT, SW1);
 
@@ -95,4 +101,9 @@ static void nrf_ng_gpio_init(void) {
 	set_bit(NRF_CE_DDR, NRF_CE);
 
 	clear_bit(NRF_IRQ_DDR, NRF_IRQ);
+
+	// PCINT para NRF_IRQ (PCINT2)
+	clear_bit(NRF_IRQ_DDR, NRF_IRQ);
+	GIMSK |= _BV(PCIE); /* pin change interrupt enable ... */
+	PCMSK |= _BV(PCINT2); /* ... para pcint2 solamente */
 }

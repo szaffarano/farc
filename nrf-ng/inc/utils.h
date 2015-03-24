@@ -8,21 +8,27 @@
 #ifndef UTILS_H_
 #define UTILS_H_
 
+#include <stdint.h>
+
 #define 	bool	_Bool
 #define 	true	1
 #define 	false	0
 
-#define tgl_bit(port, pin)		port ^= _BV(pin)
-#define set_bit(port, pin)		port |= _BV(pin)
-#define clear_bit(port, pin)	port &= ~_BV(pin)
+#define		mask(bit)				(1 << (bit))
+#define 	tgl_bit(port, pin)		port ^= mask(pin)
+#define 	set_bit(port, pin)		port |= mask(pin)
+#define 	clear_bit(port, pin)	port &= ~mask(pin)
 
-#define BIT_0 0x01
-#define BIT_1 0x02
-#define BIT_2 0x04
-#define BIT_3 0x08
-#define BIT_4 0x10
-#define BIT_5 0x20
-#define BIT_6 0x40
-#define BIT_7 0x80
+#define 	BIT_0 0x01
+#define 	BIT_1 0x02
+#define 	BIT_2 0x04
+#define 	BIT_3 0x08
+#define 	BIT_4 0x10
+#define 	BIT_5 0x20
+#define 	BIT_6 0x40
+#define 	BIT_7 0x80
+
+void delay_ms(uint16_t ms);
+void delay_us(uint16_t us);
 
 #endif /* UTILS_H_ */

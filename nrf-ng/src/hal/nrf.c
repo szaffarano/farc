@@ -6,8 +6,8 @@
  */
 
 #include <hal/nrf.h>
-#include <hw/nrf24l01.h>
 #include <spi/spi.h>
+#include <hw/nrf24l01.h>
 
 void hal_nrf_enable_ack_pl(void) {
 	hal_nrf_write_reg(FEATURE, (hal_nrf_read_reg(FEATURE) | 0x02));
@@ -33,40 +33,34 @@ uint8_t hal_nrf_read_rx_pl_w(void) {
 
 	uint8_t temp;
 
-	CSN_LOW()
-	;
+	csn_low();
 
 	hal_nrf_rw(RD_RX_PLOAD_W);
 	temp = hal_nrf_rw(0);
-	CSN_HIGH()
-	;
+	csn_high();
 
 	return temp;
 
 }
 
 void hal_nrf_lock_unlock() {
-	CSN_LOW()
-	;
+	csn_low();
 
 	hal_nrf_rw(LOCK_UNLOCK);
 	hal_nrf_rw(0x73);
 
-	CSN_HIGH()
-	;
+	csn_high();
 }
 
 void hal_nrf_write_ack_pload(uint8_t pipe, uint8_t *tx_pload, uint8_t length) {
-	CSN_LOW()
-	;
+	csn_low();
 
 	hal_nrf_rw(WR_ACK_PLOAD | pipe);
 	while (length--) {
 		hal_nrf_rw(*tx_pload++);
 	}
 
-	CSN_HIGH()
-	;
+	csn_high();
 }
 
 uint8_t hal_nrf_get_clear_irq_flags(void) {
@@ -177,10 +171,10 @@ uint8_t hal_nrf_get_address_width(void) {
 void hal_nrf_set_operation_mode(hal_nrf_operation_mode_t op_mode) {
 	if (op_mode == HAL_NRF_PRX) {
 		hal_nrf_write_reg(CONFIG, (hal_nrf_read_reg(CONFIG) | (1 << PRIM_RX)));
-		CE_HIGH();
+		ce_high();
 	} else {
 		hal_nrf_write_reg(CONFIG, (hal_nrf_read_reg(CONFIG) & ~(1 << PRIM_RX)));
-		CE_LOW();
+		ce_low();
 	}
 }
 
@@ -218,6 +212,7 @@ uint16_t hal_nrf_read_rx_pload(uint8_t *rx_pload) {
 
 void hal_nrf_write_tx_pload(uint8_t *tx_pload, uint8_t length) {
 	hal_nrf_write_multibyte_reg((uint8_t) (HAL_NRF_TX_PLOAD), tx_pload, length);
+	ce_pulse();
 }
 
 void hal_nrf_flush_tx(void) {
@@ -230,20 +225,17 @@ uint8_t hal_nrf_nop(void) {
 
 uint8_t hal_nrf_read_reg(uint8_t reg) {
 	uint8_t temp;
-	CSN_LOW()
-	;
+	csn_low();
 	hal_nrf_rw(reg);
 	temp = hal_nrf_rw(0);
-	CSN_HIGH()
-	;
+	csn_high();
 
 	return temp;
 }
 
 uint8_t hal_nrf_write_reg(uint8_t reg, uint8_t value) {
 	uint8_t retval;
-	CSN_LOW()
-	;
+	csn_low();
 	if (reg < WRITE_REG) {
 		retval = hal_nrf_rw(WRITE_REG + reg);
 		hal_nrf_rw(value);
@@ -256,8 +248,7 @@ uint8_t hal_nrf_write_reg(uint8_t reg, uint8_t value) {
 			retval = hal_nrf_rw(reg);
 		}
 	}
-	CSN_HIGH()
-	;
+	csn_high();
 
 	return retval;
 }
@@ -269,8 +260,7 @@ uint16_t hal_nrf_read_multibyte_reg(uint8_t reg, uint8_t *pbuf) {
 	case HAL_NRF_PIPE1:
 	case HAL_NRF_TX:
 		length = ctr = hal_nrf_get_address_width();
-		CSN_LOW()
-		;
+		csn_low();
 		hal_nrf_rw(RX_ADDR_P0 + reg);
 		break;
 
@@ -278,8 +268,7 @@ uint16_t hal_nrf_read_multibyte_reg(uint8_t reg, uint8_t *pbuf) {
 		if ((reg = hal_nrf_get_rx_data_source()) < 7) {
 			length = ctr = hal_nrf_read_rx_pl_w();
 
-			CSN_LOW()
-			;
+			csn_low();
 			hal_nrf_rw(RD_RX_PLOAD);
 		} else {
 			ctr = length = 0;
@@ -295,8 +284,7 @@ uint16_t hal_nrf_read_multibyte_reg(uint8_t reg, uint8_t *pbuf) {
 		*pbuf++ = hal_nrf_rw(0);
 	}
 
-	CSN_HIGH()
-	;
+	csn_high();
 
 	return (((uint16_t) reg << 8) | length);
 }
@@ -307,14 +295,12 @@ void hal_nrf_write_multibyte_reg(uint8_t reg, uint8_t *pbuf, uint8_t length) {
 	case HAL_NRF_PIPE1:
 	case HAL_NRF_TX:
 		length = hal_nrf_get_address_width();
-		CSN_LOW()
-		;
+		csn_low();
 		hal_nrf_rw(WRITE_REG + RX_ADDR_P0 + reg);
 		break;
 
 	case HAL_NRF_TX_PLOAD:
-		CSN_LOW()
-		;
+		csn_low();
 		hal_nrf_rw(WR_TX_PLOAD);
 		break;
 	default:
@@ -325,8 +311,7 @@ void hal_nrf_write_multibyte_reg(uint8_t reg, uint8_t *pbuf, uint8_t length) {
 		hal_nrf_rw(*pbuf++);
 	}
 
-	CSN_HIGH()
-	;
+	csn_high();
 }
 
 uint8_t hal_nrf_rw(uint8_t value) {

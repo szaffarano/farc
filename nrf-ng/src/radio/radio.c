@@ -8,83 +8,63 @@
 #include <radio/radio.h>
 #include <hal/nrf.h>
 #include <hw/nrf24l01.h>
-#include <util/delay.h>
-#include <avr/interrupt.h>
+#include <utils.h>
 
 static volatile radio_status_t status;
 static uint8_t pload[RF_PAYLOAD_LENGTH];
 
 void radio_init(const uint8_t *address,
 		hal_nrf_operation_mode_t operational_mode) {
-	hal_nrf_set_power_mode(HAL_NRF_PWR_DOWN);        // Power down device
+	uint8_t config = mask(EN_CRC);
 
-	hal_nrf_close_pipe(HAL_NRF_ALL);              // First close all radio pipes
-												  // Pipe 0 and 1 open by default
-	hal_nrf_open_pipe(HAL_NRF_PIPE0, true);       // Then open pipe0, w/autoack
+	// Pongo device en power down (registro CONFIG con su valor de reset)
+	hal_nrf_write_reg(CONFIG, config);
 
-	hal_nrf_set_crc_mode(HAL_NRF_CRC_16BIT);      // Operates in 16bits CRC mode
-	hal_nrf_set_auto_retr(RF_RETRANSMITS, RF_RETRANS_DELAY);
-	// Enables auto retransmit.
-	// 3 retrans with 250ms delay
+	// Cierro todos los pipes
+	hal_nrf_write_reg(EN_RXADDR, 0);
+	hal_nrf_write_reg(EN_AA, 0);
 
-	// sebas: casteo
-	hal_nrf_set_address_width(HAL_NRF_AW_5BYTES);  // 5 bytes address width
-	hal_nrf_set_address(HAL_NRF_TX, (uint8_t*) address); // Set device's addresses
-	hal_nrf_set_address(HAL_NRF_PIPE0, (uint8_t*) address); // Sets recieving address on
-	// pipe0
+	// Abro pipe0 con auto ack
+	hal_nrf_write_reg(EN_RXADDR, mask(0));
+	hal_nrf_write_reg(EN_AA, mask(0));
 
-	/*****************************************************************************
-	 * Changed from esb/radio_esb.c                                              *
-	 * Enables:                                                                  *
-	 *  - ACK payload                                                            *
-	 *  - Dynamic payload width                                                  *
-	 *  - Dynamic ACK                                                            *
-	 *****************************************************************************/
-	hal_nrf_enable_ack_pl();                       // Try to enable ack payload
+	// auto retransmit delay = SETUP_RETR[7:4]: 0b0001 = 500 uSec
+	// auto retransmit count = SETUP_RETR[3:0]: 0b1111 = 15
+	hal_nrf_write_reg(SETUP_RETR, 0b00011111);
 
-	// When the features are locked, the FEATURE and DYNPD are read out 0x00
-	// even after we have tried to enable ack payload. This mean that we need to
-	// activate the features.
-	if (hal_nrf_read_reg(FEATURE) == 0x00
-			&& (hal_nrf_read_reg(DYNPD) == 0x00)) {
-		hal_nrf_lock_unlock();                      // Activate features
-		hal_nrf_enable_ack_pl();                     // Enables payload in ack
+	// address width: 0b11 = 5bytes
+	hal_nrf_write_reg(SETUP_AW, 0b11);
+
+	// Seteo dirección para TX y RX en pipe0
+	hal_nrf_write_multibyte_reg(HAL_NRF_TX, (uint8_t*) address, 0);
+	hal_nrf_write_multibyte_reg(HAL_NRF_PIPE0, (uint8_t*) address, 0);
+
+	// Seteo payload length en pipe0 (solo aplicable en modo PRX)
+	hal_nrf_set_rx_pload_width((uint8_t) HAL_NRF_PIPE0, RF_PAYLOAD_LENGTH);
+
+	// FEATURE[1]: enable payload with ack
+	// FEATURE[2]: enable dinamic payload length
+	hal_nrf_write_reg(FEATURE, 0b110);
+
+	// Habilito payload de longitud dinamico en pipe0
+	hal_nrf_write_reg(DYNPD, mask(0));
+
+	// Seteo frecuencia de operación: 2400 + ${RF_CHANNEL}
+	hal_nrf_set_rf_channel(RF_CHANNEL);
+
+	// Habilito CRC con encoding de 16 bits y pongo en power up
+	config |= mask(EN_CRC) | mask(CRCO) | mask(PWR_UP);
+	if (operational_mode == HAL_NRF_PRX) {
+		config |= mask(PRIM_RX);
+		ce_high();
 	}
+	hal_nrf_write_reg(CONFIG, config);
 
-	hal_nrf_enable_dynamic_pl();                   // Enables dynamic payload
-	hal_nrf_setup_dyn_pl(ALL_PIPES);               // Sets up dynamic payload on
-												   // all data pipes.
-	/*****************************************************************************
-	 * End changes from esb/radio_esb.c                                          *
-	 *****************************************************************************/
+	// Espero para que se estabilice el power up
+	delay_ms(RF_POWER_UP_DELAY);
 
-	if (operational_mode == HAL_NRF_PTX)            // Mode depentant settings
-			{
-		hal_nrf_set_operation_mode(HAL_NRF_PTX);     // Enter TX mode
-		CE_LOW();
-	} else {
-		hal_nrf_set_operation_mode(HAL_NRF_PRX);     // Enter RX mode
-		hal_nrf_set_rx_pload_width((uint8_t) HAL_NRF_PIPE0, RF_PAYLOAD_LENGTH);
-		// Pipe0 expect
-		// PAYLOAD_LENGTH byte payload
-		// PAYLOAD_LENGTH in radio.h
-		CE_HIGH();
-	}
-
-	hal_nrf_set_rf_channel(RF_CHANNEL);           // Operating on static channel
-												  // Defined in radio.h.
-												  // Frequenzy =
-												  //        2400 + RF_CHANNEL
-	hal_nrf_set_power_mode(HAL_NRF_PWR_UP);        // Power up device
-
-	_delay_ms(RF_POWER_UP_DELAY);                // Wait for the radio to
-
-	radio_set_status(RF_IDLE);                    // Radio now ready
-
-	// PCINT para NRF_IRQ (PCINT2)
-	clear_bit(NRF_IRQ_DDR, NRF_IRQ);
-	GIMSK |= _BV(PCIE); /* pin change interrupt enable ... */
-	PCMSK |= _BV(PCINT2); /* ... para pcint2 solamente */
+	// Fin de inicialización, radio idle
+	radio_set_status(RF_IDLE);
 }
 
 radio_status_t radio_get_status(void) {
@@ -101,13 +81,7 @@ uint8_t radio_get_pload_byte(uint8_t byte_index) {
 
 void radio_send_packet(uint8_t *packet, uint8_t length) {
 	hal_nrf_write_tx_pload(packet, length);
-	CE_PULSE()
-	;
 	radio_set_status(RF_BUSY);
-}
-
-ISR(PCINT_vect) {
-	radio_irq();
 }
 
 void radio_irq(void) {
