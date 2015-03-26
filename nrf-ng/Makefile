@@ -74,6 +74,12 @@ HEADERS = $(SRC:.c=.h)
 OBJ = $(SRC:.c=.o) 
 
 ## Generic Makefile targets.  (Only .hex file is necessary)
+master: CFLAGS += -DMASTER
+master: all
+
+slave: CFLAGS += -DSLAVE
+slave: all
+
 all: $(TARGET).hex
 	
 %.hex: %.elf
@@ -121,6 +127,12 @@ squeaky_clean:
 ##########              Programmer-specific details             ##########
 ##########           Flashing code to AVR using avrdude         ##########
 ##########------------------------------------------------------##########
+
+flash_master: CFLAGS += -DMASTER
+flash_master: flash
+
+flash_slave: CFLAGS += -DSLAVE
+flash_slave: flash
 
 flash: $(TARGET).hex 
 	$(AVRDUDE) -c $(PROGRAMMER_TYPE) -p $(MCU) $(PROGRAMMER_ARGS) -U flash:w:$<

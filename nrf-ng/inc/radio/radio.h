@@ -13,7 +13,7 @@
 
 #define RF_CHANNEL 			40
 #define RF_POWER_UP_DELAY 	2
-#define RF_PAYLOAD_LENGTH 	10
+#define RF_PAYLOAD_LENGTH 	1
 #define RF_ADDRESS	{ 0x22, 0x33, 0x44, 0x55, 0x01 }
 
 typedef enum {
@@ -32,7 +32,7 @@ void radio_set_status(radio_status_t new_status);
 
 uint8_t radio_get_pload_byte(uint8_t byte_index);
 
-void radio_send_packet(uint8_t *packet, uint8_t length);
+uint8_t radio_send_packet(uint8_t *packet, uint8_t length);
 
 void radio_irq(void);
 

@@ -15,10 +15,11 @@ static uint8_t pload[RF_PAYLOAD_LENGTH];
 static const uint8_t address[5] = RF_ADDRESS;
 
 void radio_init(hal_nrf_operation_mode_t operational_mode) {
-	uint8_t config = mask(EN_CRC);
+	// Habilito CRC con encoding de 16 bits y pongo en power up.
+	uint8_t config = mask(EN_CRC) | mask(CRCO) | mask(PWR_UP);
 
-	// Pongo device en power down (registro CONFIG con su valor de reset)
-	hal_nrf_write_reg(CONFIG, config);
+	hal_nrf_write_reg(CONFIG, mask(CRCO));
+	delay_ms(RF_POWER_UP_DELAY);
 
 	// Cierro todos los pipes
 	hal_nrf_write_reg(EN_RXADDR, 0);
@@ -52,9 +53,8 @@ void radio_init(hal_nrf_operation_mode_t operational_mode) {
 	// Seteo frecuencia de operación: 2400 + ${RF_CHANNEL}
 	hal_nrf_set_rf_channel(RF_CHANNEL);
 
-	// Habilito CRC con encoding de 16 bits y pongo en power up
-	config |= mask(EN_CRC) | mask(CRCO) | mask(PWR_UP);
 	if (operational_mode == HAL_NRF_PRX) {
+		// Agrego config para PRX
 		config |= mask(PRIM_RX);
 		ce_high();
 	}
@@ -79,9 +79,14 @@ uint8_t radio_get_pload_byte(uint8_t byte_index) {
 	return pload[byte_index];
 }
 
-void radio_send_packet(uint8_t *packet, uint8_t length) {
-	hal_nrf_write_tx_pload(packet, length);
-	radio_set_status(RF_BUSY);
+uint8_t radio_send_packet(uint8_t *packet, uint8_t length) {
+	uint8_t wrote = 0;
+	if (radio_get_status() == RF_IDLE) {
+		hal_nrf_write_tx_pload(packet, length);
+		wrote = length;
+		radio_set_status(RF_BUSY);
+	}
+	return wrote;
 }
 
 void radio_irq(void) {
