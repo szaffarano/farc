@@ -19,6 +19,8 @@ typedef enum _debounce_event {
 #define SLAVE
 #endif
 
+/* ============================= [port specific macros] ============================= */
+
 #define	SW1					PD3
 #define	SW1_PORT			PORTD
 #define SW1_PIN				PIND
@@ -44,6 +46,8 @@ typedef enum _debounce_event {
 #define RELAY_TGL()			tgl_bit(LEDB_PORT, LEDB)
 
 #define RELAY_RUNNING()		bit_is_set(LEDB_PORT, LEDB)
+
+/* ============================= [application layer API] ============================= */
 
 void nrf_ng_init(void);
 

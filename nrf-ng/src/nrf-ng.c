@@ -127,12 +127,12 @@ static void nrf_ng_systick_init(void) {
 void fsm_master(void) {
 	static fsm_master_state state = MASTER_IDLE;
 	debounce_event event = farc_debounce();
-	uint8_t ack[RF_MAX_RT] = {CMD_UNDEFINED};
+	uint8_t ack[RF_PAYLOAD_LENGTH] = {CMD_UNDEFINED};
 
 	ATOMIC_BLOCK(ATOMIC_FORCEON)
 	{
 		if (radio_data_available()) {
-			radio_get_pload(ack);
+			radio_get_packet(ack);
 		}
 	}
 
@@ -142,7 +142,7 @@ void fsm_master(void) {
 			pload[0] = CMD_START;
 			radio_send_packet(pload, RF_PAYLOAD_LENGTH);
 			state = MASTER_WAITING_START;
-			_delay_ms(2);
+//			_delay_ms(2);
 		}
 		break;
 	case MASTER_WAITING_START:
@@ -184,7 +184,7 @@ void fsm_slave(void) {
 	{
 		if (radio_data_available()) {
 			pload[0] = RELAY_RUNNING() ? RUNNING : IDLE;
-			radio_get_pload(cmd);
+			radio_get_packet(cmd);
 			hal_nrf_write_ack_pload(0, pload, RF_PAYLOAD_LENGTH);
 		}
 	}
