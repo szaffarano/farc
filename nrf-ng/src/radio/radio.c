@@ -9,10 +9,11 @@
 #include <hal/nrf.h>
 #include <hw/nrf24l01.h>
 #include <utils.h>
+#include <string.h>
 
-static volatile radio_status_t status;
 static uint8_t pload[RF_PAYLOAD_LENGTH];
 static const uint8_t address[5] = RF_ADDRESS;
+static uint8_t rf_control;
 
 void radio_init(hal_nrf_operation_mode_t operational_mode) {
 	// Habilito CRC con encoding de 16 bits y pongo en power up.
@@ -64,48 +65,55 @@ void radio_init(hal_nrf_operation_mode_t operational_mode) {
 	delay_ms(RF_POWER_UP_DELAY);
 
 	// Fin de inicialización, radio idle
-	radio_set_status(RF_IDLE);
+	rf_control = ~(mask(RF_DATA_AVAILABLE) | mask(RF_BUSY) | mask(RF_MAX_RT));
 }
 
-radio_status_t radio_get_status(void) {
-	return status;
+uint8_t radio_get_control_register(void) {
+	return rf_control;
 }
 
-void radio_set_status(radio_status_t new_status) {
-	status = new_status;
+bool radio_data_available(void) {
+	return (rf_control & mask(RF_DATA_AVAILABLE));
 }
 
-uint8_t radio_get_pload_byte(uint8_t byte_index) {
-	return pload[byte_index];
+void radio_get_pload(uint8_t* buffer) {
+	clear_bit(rf_control, RF_DATA_AVAILABLE);
+	memcpy(buffer, pload, RF_PAYLOAD_LENGTH);
 }
 
-uint8_t radio_send_packet(uint8_t *packet, uint8_t length) {
-	uint8_t wrote = 0;
-	if (radio_get_status() == RF_IDLE) {
+bool radio_send_packet(uint8_t *packet, uint8_t length) {
+	if (!(rf_control & mask(RF_BUSY))) {
 		hal_nrf_write_tx_pload(packet, length);
-		wrote = length;
-		radio_set_status(RF_BUSY);
+		set_bit(rf_control, RF_BUSY);
+		return true;
 	}
-	return wrote;
+	return false;
 }
 
 void radio_irq(void) {
-	switch (hal_nrf_get_clear_irq_flags()) {
+	uint8_t status =
+			hal_nrf_read_reg(STATUS)
+					& (mask(HAL_NRF_MAX_RT) | mask(HAL_NRF_TX_DS)
+							| mask(HAL_NRF_RX_DR));
+
+	switch (status) {
 	case (mask(HAL_NRF_MAX_RT)):
 		// El PTX alcanzó la máxima cantidad de reintentos al enviar un paquete
 		hal_nrf_flush_tx();
-		radio_set_status(RF_MAX_RT);
+		set_bit(rf_control, RF_MAX_RT);
+		clear_bit(rf_control, RF_BUSY);
 		break;
 	case (mask(HAL_NRF_TX_DS)):
 		// El PTX recibió una respuesta ACK ( = el paquete se envió OK)
-		radio_set_status(RF_TX_DS);
+		clear_bit(rf_control, RF_BUSY);
 		break;
 	case (mask(HAL_NRF_RX_DR)):
 		// El PRX recibió un paquete nuevo
 		while (!hal_nrf_rx_fifo_empty()) {
 			hal_nrf_read_rx_pload(pload);
 		}
-		radio_set_status(RF_RX_DR);
+		set_bit(rf_control, RF_DATA_AVAILABLE);
+		clear_bit(rf_control, RF_BUSY);
 		break;
 	case ((mask(HAL_NRF_RX_DR)) | (mask(HAL_NRF_TX_DS))):
 		// 1. El PTX recibió una respuesta ACK con payload
@@ -113,9 +121,13 @@ void radio_irq(void) {
 		while (!hal_nrf_rx_fifo_empty()) {
 			hal_nrf_read_rx_pload(pload);
 		}
-		radio_set_status(RF_TX_AP);
+		set_bit(rf_control, RF_DATA_AVAILABLE);
+		clear_bit(rf_control, RF_BUSY);
 		break;
 	default:
 		break;
 	}
+
+	hal_nrf_write_reg(STATUS,
+			(mask(HAL_NRF_MAX_RT) | mask(HAL_NRF_TX_DS) | mask(HAL_NRF_RX_DR)));
 }

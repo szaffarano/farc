@@ -76,7 +76,6 @@ void nrf_ng_boot_msg(void) {
 
 void nrf_ng_loop() {
 	while (true) {
-
 #if defined (MASTER)
 		fsm_master();
 #elif defined (SLAVE)
@@ -127,53 +126,44 @@ static void nrf_ng_systick_init(void) {
 
 void fsm_master(void) {
 	static fsm_master_state state = MASTER_IDLE;
-	radio_status_t status = radio_get_status();
 	debounce_event event = farc_debounce();
-	uint8_t ack = CMD_UNDEFINED;
+	uint8_t ack[RF_MAX_RT] = {CMD_UNDEFINED};
 
-	switch (status) {
-	case RF_TX_AP:
-		ack = radio_get_pload_byte(0);
-		radio_set_status(RF_IDLE);
-		break;
-	case RF_TX_DS:
-		radio_set_status(RF_IDLE);
-		break;
-	case RF_MAX_RT:
-		LEDB_ON();
-		radio_set_status(RF_IDLE);
-		break;
-	default:
-		break;
+	ATOMIC_BLOCK(ATOMIC_FORCEON)
+	{
+		if (radio_data_available()) {
+			radio_get_pload(ack);
+		}
 	}
 
 	switch (state) {
 	case MASTER_IDLE:
 		if (event == FELL) {
 			pload[0] = CMD_START;
-			if (radio_send_packet(pload, RF_PAYLOAD_LENGTH) > 0) {
-				state = MASTER_WAITING_START;
-				_delay_ms(2);
-			}
+			radio_send_packet(pload, RF_PAYLOAD_LENGTH);
+			state = MASTER_WAITING_START;
+			_delay_ms(2);
 		}
 		break;
 	case MASTER_WAITING_START:
-		if (ack == RUNNING) {
+		if (ack[0] == RUNNING) {
 			LEDA_ON();
 			state = MASTER_RUNNING;
 		} else {
 			pload[0] = CMD_STATUS;
-			radio_send_packet(pload, RF_PAYLOAD_LENGTH);
+			if (!radio_send_packet(pload, RF_PAYLOAD_LENGTH)) {
+				LEDB_ON();
+			}
 		}
 		break;
 	case MASTER_RUNNING:
 		if (event == FELL) {
 			pload[0] = CMD_STOP;
 			radio_send_packet(pload, RF_PAYLOAD_LENGTH);
-		} else if (ack == IDLE) {
+		} else if (ack[0] == IDLE) {
 			state = MASTER_IDLE;
 			LEDA_OFF();
-		} else if (ack == RUNNING) {
+		} else if (ack[0] == RUNNING) {
 			LEDA_ON();
 		} else {
 			pload[0] = CMD_STATUS;
@@ -188,30 +178,21 @@ void fsm_slave(void) {
 	static uint32_t start;
 	static uint32_t enlapsed;
 
-	radio_status_t status = radio_get_status();
-	uint8_t cmd = CMD_UNDEFINED;
+	uint8_t cmd[RF_PAYLOAD_LENGTH] = {CMD_UNDEFINED};
 
-	switch (status) {
-	case RF_TX_AP:
-	case RF_RX_DR:
-		pload[0] = RELAY_RUNNING() ? RUNNING : IDLE;
-		cmd = radio_get_pload_byte(0);
-		hal_nrf_write_ack_pload(0, pload, RF_PAYLOAD_LENGTH);
-		radio_set_status(RF_IDLE);
-		break;
-	case RF_MAX_RT:
-		LEDA_ON();
-		radio_set_status(RF_IDLE);
-		break;
-	default:
-		break;
+	ATOMIC_BLOCK(ATOMIC_FORCEON)
+	{
+		if (radio_data_available()) {
+			pload[0] = RELAY_RUNNING() ? RUNNING : IDLE;
+			radio_get_pload(cmd);
+			hal_nrf_write_ack_pload(0, pload, RF_PAYLOAD_LENGTH);
+		}
 	}
 
 	switch (state) {
 	case SLAVE_IDLE:
-		if (cmd == CMD_START) {
+		if (cmd[0] == CMD_START) {
 			RELAY_ON();
-			LEDA_ON();
 			state = SLAVE_RUNNING;
 			ATOMIC_BLOCK(ATOMIC_FORCEON)
 			{
@@ -224,9 +205,8 @@ void fsm_slave(void) {
 		{
 			enlapsed = get_systicks() - start;
 		}
-		if (cmd == CMD_STOP || enlapsed > relay_timeout) {
+		if (cmd[0] == CMD_STOP || enlapsed > relay_timeout) {
 			RELAY_OFF();
-			LEDA_OFF();
 			state = SLAVE_IDLE;
 		}
 		break;
