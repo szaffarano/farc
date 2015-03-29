@@ -16,7 +16,7 @@ debounce_event farc_debounce(void) {
 	static debounce_state state = WAITING_PUSH;
 	static int8_t ticks = DEBOUNCE_DELAY;
 
-	debounce_event event = RELEASED;
+	static debounce_event event = RELEASED;
 
 	if (ticks-- <= 0) {
 		switch (state) {
@@ -25,9 +25,9 @@ debounce_event farc_debounce(void) {
 				state = NOISE_PUSH;
 				ticks = DEBOUNCE_DELAY;
 			}
+			event = RELEASED;
 			break;
 		case NOISE_PUSH:
-			event = FELL;
 			if (bit_is_clear(SW1_PIN, SW1)) {
 				state = PUSHING;
 				event = FELL;
@@ -39,17 +39,16 @@ debounce_event farc_debounce(void) {
 			if (bit_is_set(SW1_PIN, SW1)) {
 				ticks = DEBOUNCE_DELAY;
 				state = NOISE_RELEASE;
-			} else {
-				event = PUSHED;
 			}
+			event = PUSHED;
 			break;
 		case NOISE_RELEASE:
 			if (bit_is_clear(SW1_PIN, SW1)) {
 				state = PUSHING;
+				event = PUSHED;
 			} else {
 				// liberaron el boton
 				state = WAITING_PUSH;
-
 				event = ROSE;
 			}
 			break;
