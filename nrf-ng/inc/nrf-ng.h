@@ -19,6 +19,10 @@ typedef enum _debounce_event {
 #define SLAVE
 #endif
 
+/* =========================== [application configuration] =========================== */
+
+#define RADIO_PROGRAMMING_TIMEOUT	500
+
 /* ============================= [port specific macros] ============================= */
 
 #define	SW1					PD3

@@ -16,14 +16,19 @@
 #include <avr/eeprom.h>
 #include <util/atomic.h>
 
-#define CMD_START		0x10
-#define CMD_STOP		0x20
-#define CMD_STATUS		0x30
-#define CMD_UNDEFINED	0xFF
+/* =============================== [protocol commands] =============================== */
+#define CMD_START			0x10
+#define CMD_STOP			0x20
+#define CMD_STATUS			0x30
+#define CMD_BLOCK_TIMEOUT	0x40
+#define CMD_REPROGRAM		0x50
+#define CMD_UNDEFINED		0xFF
 
-#define	RUNNING			0xC4
-#define IDLE			0x57
+/* =============================== [protocol states] =============================== */
+#define	RUNNING				0xC4
+#define IDLE				0x57
 
+/* =============================== [local variables] =============================== */
 static uint8_t pload[RF_PAYLOAD_LENGTH];
 volatile static uint32_t ticks;
 
@@ -34,7 +39,7 @@ void fsm_master(void);
 void fsm_slave(void);
 
 typedef enum {
-	MASTER_IDLE, MASTER_WAITING_START, MASTER_RUNNING
+	MASTER_IDLE, MASTER_WAITING, MASTER_STOPPING, MASTER_REPROGRAMMING
 } fsm_master_state;
 
 typedef enum {
@@ -126,8 +131,11 @@ static void nrf_ng_systick_init(void) {
 
 void fsm_master(void) {
 	static fsm_master_state state = MASTER_IDLE;
+	static uint32_t start;
+
+	uint32_t enlapsed = 0;
 	debounce_event event = farc_debounce();
-	uint8_t ack[RF_PAYLOAD_LENGTH] = {CMD_UNDEFINED};
+	uint8_t ack[RF_PAYLOAD_LENGTH] = { CMD_UNDEFINED };
 
 	ATOMIC_BLOCK(ATOMIC_FORCEON)
 	{
@@ -141,22 +149,53 @@ void fsm_master(void) {
 		if (event == FELL) {
 			pload[0] = CMD_START;
 			radio_send_packet(pload, RF_PAYLOAD_LENGTH);
-			state = MASTER_WAITING_START;
-//			_delay_ms(2);
-		}
-		break;
-	case MASTER_WAITING_START:
-		if (ack[0] == RUNNING) {
-			LEDA_ON();
-			state = MASTER_RUNNING;
-		} else {
-			pload[0] = CMD_STATUS;
-			if (!radio_send_packet(pload, RF_PAYLOAD_LENGTH)) {
-				LEDB_ON();
+			state = MASTER_WAITING;
+			ATOMIC_BLOCK(ATOMIC_FORCEON)
+			{
+				start = get_systicks();
 			}
 		}
 		break;
-	case MASTER_RUNNING:
+	case MASTER_WAITING:
+		ATOMIC_BLOCK(ATOMIC_FORCEON)
+		{
+			enlapsed = get_systicks() - start;
+		}
+		if (ack[0] == RUNNING) {
+			LEDA_ON();
+		}
+
+		if (event == PUSHED) {
+			if (enlapsed >= RADIO_PROGRAMMING_TIMEOUT) {
+				pload[0] = CMD_BLOCK_TIMEOUT;
+				radio_send_packet(pload, RF_PAYLOAD_LENGTH);
+				state = MASTER_REPROGRAMMING;
+			}
+		} else {
+			state = MASTER_STOPPING;
+		}
+
+		if (ack[0] != RUNNING) {
+			pload[0] = CMD_STATUS;
+			radio_send_packet(pload, RF_PAYLOAD_LENGTH);
+		}
+		break;
+	case MASTER_REPROGRAMMING:
+		if (event == ROSE) {
+			ATOMIC_BLOCK(ATOMIC_FORCEON)
+			{
+				enlapsed = get_systicks() - start;
+			}
+			pload[0] = CMD_REPROGRAM;
+			pload[1] = enlapsed & 0xFF;
+			pload[2] = (enlapsed >> 8) & 0xFF;
+			pload[3] = (enlapsed >> 16) & 0xFF;
+			pload[4] = (enlapsed >> 24) & 0xFF;
+			radio_send_packet(pload, RF_PAYLOAD_LENGTH);
+			state = MASTER_STOPPING;
+		}
+		break;
+	case MASTER_STOPPING:
 		if (event == FELL) {
 			pload[0] = CMD_STOP;
 			radio_send_packet(pload, RF_PAYLOAD_LENGTH);
@@ -177,23 +216,26 @@ void fsm_slave(void) {
 	static fsm_slave_state state = SLAVE_IDLE;
 	static uint32_t start;
 	static uint32_t enlapsed;
+	static bool blocked = false;
 
-	uint8_t cmd[RF_PAYLOAD_LENGTH] = {CMD_UNDEFINED};
+	uint8_t cmd[RF_PAYLOAD_LENGTH] = { CMD_UNDEFINED };
 
 	ATOMIC_BLOCK(ATOMIC_FORCEON)
 	{
 		if (radio_data_available()) {
-			pload[0] = RELAY_RUNNING() ? RUNNING : IDLE;
 			radio_get_packet(cmd);
-			hal_nrf_write_ack_pload(0, pload, RF_PAYLOAD_LENGTH);
 		}
+		pload[0] = RELAY_RUNNING() ? RUNNING : IDLE;
+		hal_nrf_write_ack_pload(0, pload, RF_PAYLOAD_LENGTH);
 	}
 
 	switch (state) {
 	case SLAVE_IDLE:
 		if (cmd[0] == CMD_START) {
 			RELAY_ON();
+			LEDA_ON();
 			state = SLAVE_RUNNING;
+			blocked = false;
 			ATOMIC_BLOCK(ATOMIC_FORCEON)
 			{
 				start = get_systicks();
@@ -205,9 +247,37 @@ void fsm_slave(void) {
 		{
 			enlapsed = get_systicks() - start;
 		}
-		if (cmd[0] == CMD_STOP || enlapsed > relay_timeout) {
+
+		if (!blocked && enlapsed > relay_timeout) {
 			RELAY_OFF();
+			LEDA_OFF();
 			state = SLAVE_IDLE;
+		} else {
+			switch (cmd[0]) {
+			case CMD_STOP:
+				RELAY_OFF();
+				LEDA_OFF();
+				state = SLAVE_IDLE;
+				break;
+			case CMD_BLOCK_TIMEOUT:
+				blocked = true;
+				break;
+			case CMD_REPROGRAM:
+				relay_timeout = cmd[4] & 0xFF;
+				relay_timeout <<= 8;
+				relay_timeout |= cmd[3] & 0xFF;
+				relay_timeout <<= 8;
+				relay_timeout |= cmd[2] & 0xFF;
+				relay_timeout <<= 8;
+				relay_timeout |= cmd[1] & 0xFF;
+
+				eeprom_update_dword(&ee_relay_timeout, relay_timeout);
+
+				RELAY_OFF();
+				LEDA_OFF();
+				state = SLAVE_IDLE;
+				break;
+			}
 		}
 		break;
 	}
