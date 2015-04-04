@@ -34,9 +34,14 @@ void radio_init(hal_nrf_operation_mode_t operational_mode) {
 	hal_nrf_write_reg(EN_RXADDR, mask(0));
 	hal_nrf_write_reg(EN_AA, mask(0));
 
-	// auto retransmit delay = SETUP_RETR[7:4]: 0b0001 = 500 uSec
+	// auto retransmit delay = SETUP_RETR[7:4]
+	//		0000: Wait 250μS
+	//		0001: Wait 500μS
+	//		0010: Wait 750μS
+	//		........
+	//		1111: Wait 4000μS
 	// auto retransmit count = SETUP_RETR[3:0]: 0b1111 = 15
-	hal_nrf_write_reg(SETUP_RETR, 0b00011111);
+	hal_nrf_write_reg(SETUP_RETR, 0b11111111);
 
 	// address width: 0b11 = 5bytes
 	hal_nrf_write_reg(SETUP_AW, 0b11);
@@ -65,6 +70,27 @@ void radio_init(hal_nrf_operation_mode_t operational_mode) {
 	}
 	hal_nrf_write_reg(CONFIG, config);
 
+	// setup power mode
+	//
+	// RF_DR_LOW[5]
+	// RF_DR_HIGH[3]
+	// Select between the high speed data rates. This bit
+	// is don’t care if RF_DR_LOW is set.
+	// Encoding:
+	// 		[RF_DR_LOW, RF_DR_HIGH]:
+	// 			00: 1Mbps
+	// 			01: 2Mbps
+	// 			10: 250kbps
+	// 			11: Reserved
+	//
+	// RF_PWR[2:1]
+	//		00: -18dBm
+	//		01: -12dBm
+	//		10: -6dBm
+	//		11: 0dBm
+	// Set: 2Mbps, 0dBm
+	hal_nrf_write_reg(RF_SETUP, 0b00001110);
+
 	// Espero para que se estabilice el power up
 	delay_ms(RF_POWER_UP_DELAY);
 
@@ -77,6 +103,11 @@ rf_status_t radio_get_status(void) {
 	return rf_status;
 }
 
+void radio_clear_status(void) {
+	rf_status.busy = 0;
+	rf_status.data_available = 0;
+	rf_status.max_rt = 0;
+}
 bool radio_data_available(void) {
 	return (rf_status.data_available == 1);
 }

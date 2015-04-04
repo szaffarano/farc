@@ -32,6 +32,8 @@ void radio_init(hal_nrf_operation_mode_t operational_mode);
 
 rf_status_t radio_get_status(void);
 
+void radio_clear_status(void);
+
 bool radio_data_available(void);
 
 void radio_get_packet(uint8_t* buffer);

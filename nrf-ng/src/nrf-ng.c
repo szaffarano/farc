@@ -141,6 +141,11 @@ void fsm_master(void) {
 	{
 		if (radio_data_available()) {
 			radio_get_packet(ack);
+			radio_clear_status();
+			LEDB_OFF();
+		}
+		if (radio_get_status().max_rt) {
+			LEDB_ON();
 		}
 	}
 
@@ -173,6 +178,7 @@ void fsm_master(void) {
 			}
 		} else {
 			state = MASTER_STOPPING;
+			start = 0;
 		}
 
 		if (ack[0] != RUNNING) {
@@ -193,21 +199,34 @@ void fsm_master(void) {
 			pload[4] = (enlapsed >> 24) & 0xFF;
 			radio_send_packet(pload, RF_PAYLOAD_LENGTH);
 			state = MASTER_STOPPING;
+			start = 0;
 		}
 		break;
 	case MASTER_STOPPING:
+		start++;
+
 		if (event == FELL) {
 			pload[0] = CMD_STOP;
 			radio_send_packet(pload, RF_PAYLOAD_LENGTH);
-		} else if (ack[0] == IDLE) {
+		}
+
+		if (ack[0] == IDLE) {
 			state = MASTER_IDLE;
 			LEDA_OFF();
+			start = 0;
 		} else if (ack[0] == RUNNING) {
 			LEDA_ON();
+			start = 0;
 		} else {
 			pload[0] = CMD_STATUS;
 			radio_send_packet(pload, RF_PAYLOAD_LENGTH);
 		}
+
+		if (start >= MAX_NONRESPONSE_TIME) {
+			LEDA_OFF();
+			state = MASTER_IDLE;
+		}
+
 		break;
 	}
 }
@@ -218,6 +237,7 @@ void fsm_slave(void) {
 	static uint32_t enlapsed;
 	static bool blocked = false;
 
+	uint32_t new_relay_timeout;
 	uint8_t cmd[RF_PAYLOAD_LENGTH] = { CMD_UNDEFINED };
 
 	ATOMIC_BLOCK(ATOMIC_FORCEON)
@@ -262,16 +282,28 @@ void fsm_slave(void) {
 			case CMD_BLOCK_TIMEOUT:
 				blocked = true;
 				break;
+			case CMD_START:
+				RELAY_ON();
+				LEDA_ON();
+				blocked = false;
+				ATOMIC_BLOCK(ATOMIC_FORCEON)
+				{
+					start = get_systicks();
+				}
+				break;
 			case CMD_REPROGRAM:
-				relay_timeout = cmd[4] & 0xFF;
-				relay_timeout <<= 8;
-				relay_timeout |= cmd[3] & 0xFF;
-				relay_timeout <<= 8;
-				relay_timeout |= cmd[2] & 0xFF;
-				relay_timeout <<= 8;
-				relay_timeout |= cmd[1] & 0xFF;
+				new_relay_timeout = cmd[4] & 0xFF;
+				new_relay_timeout <<= 8;
+				new_relay_timeout |= cmd[3] & 0xFF;
+				new_relay_timeout <<= 8;
+				new_relay_timeout |= cmd[2] & 0xFF;
+				new_relay_timeout <<= 8;
+				new_relay_timeout |= cmd[1] & 0xFF;
 
-				eeprom_update_dword(&ee_relay_timeout, relay_timeout);
+				if (new_relay_timeout > MIN_RELAY_TIMEOUT) {
+					relay_timeout = new_relay_timeout;
+					eeprom_update_dword(&ee_relay_timeout, relay_timeout);
+				}
 
 				RELAY_OFF();
 				LEDA_OFF();

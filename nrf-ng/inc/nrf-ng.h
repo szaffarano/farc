@@ -21,7 +21,9 @@ typedef enum _debounce_event {
 
 /* =========================== [application configuration] =========================== */
 
-#define RADIO_PROGRAMMING_TIMEOUT	500
+#define RADIO_PROGRAMMING_TIMEOUT	400
+#define	MIN_RELAY_TIMEOUT			2000
+#define	MAX_NONRESPONSE_TIME		5000
 
 /* ============================= [port specific macros] ============================= */
 
